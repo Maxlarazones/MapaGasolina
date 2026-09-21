@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import { FUEL_LABELS } from "@/lib/miteco";
@@ -38,6 +38,23 @@ function MapSizeFix() {
   return null;
 }
 
+// Encuadra todos los puntos (incluida Canarias) la primera vez que llegan
+// datos. No se repite al cambiar de combustible para no resetear el zoom
+// que haya hecho el usuario.
+function FitOnFirstLoad({ stations }) {
+  const map = useMap();
+  const done = useRef(false);
+
+  useEffect(() => {
+    if (done.current || stations.length === 0) return;
+    const bounds = L.latLngBounds(stations.map((s) => [s.lat, s.lng]));
+    map.fitBounds(bounds, { padding: [30, 30] });
+    done.current = true;
+  }, [stations, map]);
+
+  return null;
+}
+
 export default function StationMap({ stations, activeFuel }) {
   return (
     <div className="map-wrapper">
@@ -54,6 +71,7 @@ export default function StationMap({ stations, activeFuel }) {
         zoomControl={true}
       >
         <MapSizeFix />
+        <FitOnFirstLoad stations={stations} />
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
