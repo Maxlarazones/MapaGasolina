@@ -1,6 +1,7 @@
 "use client";
 
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { useEffect } from "react";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import { FUEL_LABELS } from "@/lib/miteco";
 
@@ -16,6 +17,27 @@ const icon = L.icon({
 const SPAIN_CENTER = [40.0, -3.7038];
 const SPAIN_ZOOM = 6;
 
+// Fix de un bug clásico de Leaflet + React: si el contenedor todavía no
+// tenía su tamaño final (100vh) en el momento exacto en que el mapa se
+// inicializa, Leaflet se queda con el tamaño viejo "cacheado" y el drag/zoom
+// se comporta raro o parece no responder fuera de esa zona. Forzamos un
+// recálculo apenas monta y en cada resize de ventana.
+function MapSizeFix() {
+  const map = useMap();
+
+  useEffect(() => {
+    const fix = () => map.invalidateSize();
+    const t = setTimeout(fix, 200);
+    window.addEventListener("resize", fix);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("resize", fix);
+    };
+  }, [map]);
+
+  return null;
+}
+
 export default function StationMap({ stations, activeFuel }) {
   return (
     <div className="map-wrapper">
@@ -23,8 +45,15 @@ export default function StationMap({ stations, activeFuel }) {
         center={SPAIN_CENTER}
         zoom={SPAIN_ZOOM}
         style={{ height: "100%", width: "100%" }}
-        scrollWheelZoom={false}
+        dragging={true}
+        touchZoom={true}
+        doubleClickZoom={true}
+        scrollWheelZoom={true}
+        boxZoom={true}
+        keyboard={true}
+        zoomControl={true}
       >
+        <MapSizeFix />
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
