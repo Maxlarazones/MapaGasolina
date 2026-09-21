@@ -89,7 +89,9 @@ export default function StationMap({ stations }) {
         dragging={true}
         touchZoom={true}
         doubleClickZoom={true}
-        scrollWheelZoom={false}
+        scrollWheelZoom={true}
+        wheelPxPerZoomLevel={120}
+        wheelDebounceTime={80}
         boxZoom={false}
         keyboard={false}
         zoomControl={true}
