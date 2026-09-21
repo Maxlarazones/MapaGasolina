@@ -1,78 +1,68 @@
-# Gasolineras más baratas de España (MVP)
+# Mapa de gasolineras más baratas de España
 
-Ranking en vivo de las gasolineras más baratas de España, con mapa y buscador
-por combustible + ciudad/provincia. Datos oficiales y gratuitos del
-**Ministerio para la Transición Ecológica (MITECO)**.
+Mapa interactivo, sin nada alrededor — pensado para embeber en el cuerpo de
+una noticia (iframe) o para visitarlo directo. Muestra las 10 estaciones más
+baratas de cada comunidad autónoma (17 + Ceuta y Melilla), con un selector
+de combustible flotando arriba a la izquierda. Cada popup muestra los 4
+precios (95, 98, Diésel, Diésel Premium) de esa estación.
 
-## Qué incluye
+Datos oficiales del Ministerio para la Transición Ecológica (MITECO).
 
-- `/` — **mapa principal**: top 10 más baratas de cada una de las 17
-  comunidades + Ceuta y Melilla (~190 marcadores), con selector de
-  combustible. Cada popup muestra los 4 tipos de precio (95, 98, Diésel,
-  Diésel Premium), resaltando el seleccionado. Debajo, lista desplegable
-  por comunidad. Más abajo, un **buscador secundario** por ciudad/provincia
-  (el que ya tenías).
-- `/api/precios-por-comunidad` — endpoint nuevo: agrupa por comunidad
-  autónoma y devuelve el top N de cada una para un combustible dado.
-  Parámetros: `combustible` (`95`, `98`, `diesel`, `diesel_premium`),
-  `limit` (por defecto 10, máx. 20).
-- `/api/precios` — endpoint original de búsqueda libre por ciudad/provincia
-  (usado por el buscador secundario).
-- Cache de 30 min sobre la llamada a MITECO (vía `fetch` de Next.js).
+## Subir a GitHub / desplegar en Vercel
 
-## Subir a GitHub
+Igual que siempre:
 
 ```bash
 cd gasolineras-mvp
 git init
 git add .
-git commit -m "MVP gasolineras más baratas"
+git commit -m "Mapa embebible por comunidad"
 git branch -M main
 git remote add origin <URL_DE_TU_REPO>
 git push -u origin main
 ```
 
-## Desplegar en Vercel
+En Vercel: importar el repo, framework Next.js (se detecta solo), deploy.
+Sin variables de entorno.
 
-1. Entra en vercel.com → "Add New..." → "Project"
-2. Importa el repo de GitHub que acabas de crear
-3. Framework: Vercel lo detecta solo como **Next.js**, no hace falta tocar nada
-4. Deploy. Listo — no requiere variables de entorno ni API keys.
+## Embeber en la noticia
 
-## Checklist al desplegar (importante)
+Una vez desplegado, en el cuerpo de la noticia:
 
-- [ ] Prueba `https://tu-proyecto.vercel.app/api/precios?combustible=95&limit=5`
-      directamente en el navegador antes de mirar la UI, para confirmar que
-      MITECO responde bien desde Vercel (aquí en el entorno de desarrollo no
-      pude probar la llamada real por restricciones de red del sandbox, así
-      que esta es la primera prueba real contra el servidor de MITECO).
-- [ ] Si la API de MITECO devuelve error 403/500 puntual, no es el código:
-      esa API pública a veces tiene caídas breves de mantenimiento. Vale la
-      pena tener un mensaje de error amigable (ya está en la UI) y no
-      alarmarse si falla una vez.
-- [ ] Revisa que no aparezcan precios en 0 o absurdamente bajos (dato sucio de
-      algún operador) — el código ya filtra precios <= 0, pero si ves algo raro
-      avísame y ajustamos el filtro.
-- [ ] El agrupado por comunidad autónoma se hace matcheando el nombre de
-      provincia que da la API contra una tabla interna (no viene ya agrupado
-      así en el dato crudo). Revisá que las 19 comunidades salgan con
-      estaciones — si alguna aparece vacía o con muy pocas, probablemente el
-      nombre de esa provincia en la API tiene un formato distinto al esperado
-      y hay que ajustar la lista de palabras clave en `lib/miteco.js`
-      (función `PROVINCIA_KEYWORDS`).
+```html
+<iframe
+  src="https://tu-proyecto.vercel.app"
+  width="100%"
+  height="600"
+  style="border:0;"
+  loading="lazy"
+></iframe>
+```
 
-## Próximo paso (Fase 2, cuando esto valide tráfico)
+## Si alguna comunidad sigue sin aparecer (modo diagnóstico)
 
-La arquitectura ya está lista para eso sin tocar el backend:
-- Páginas programáticas por provincia (`/gasolineras-mas-baratas/madrid`, etc.)
-  reutilizando el mismo `/api/precios?ciudad=Madrid`
-- Solo hay que añadir rutas `app/gasolineras-mas-baratas/[ciudad]/page.js` que
-  llamen al mismo endpoint con la ciudad fija.
+La clasificación por comunidad autónoma usa dos vías: primero el código
+oficial `IDCCAA` que trae el propio dato de MITECO, y si eso falla, el
+nombre de la provincia por texto. Debería cubrir las 19, pero por si acaso
+dejé un modo de diagnóstico:
+
+Abrí en el navegador:
+`https://tu-proyecto.vercel.app/api/precios-por-comunidad?debug=1`
+
+Te va a devolver un JSON con:
+- `conteoPorComunidad`: cuántas estaciones cayeron en cada comunidad
+  (si "Otras" tiene un número alto, hay estaciones sin clasificar)
+- `muestraSinClasificar`: ejemplos reales de estaciones que no se pudieron
+  ubicar, con su `Provincia` e `IDCCAA` tal como los da la API
+
+Pasame ese JSON (o el bloque `muestraSinClasificar` y `conteoPorComunidad`)
+y ajusto el mapeo en `lib/miteco.js` con el dato real en vez de a ciegas —
+hasta ahora no pude probar contra la API real de MITECO porque el entorno
+donde yo escribo el código no tiene salida a dominios del Gobierno, así que
+este es el primer contacto real con el formato exacto de sus datos.
 
 ## Fuente de datos
 
-Geoportal de Precios de Carburantes, MITECO:
 https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/EstacionesTerrestres/
 
-Dato público oficial (Real Decreto 4/2013), sin necesidad de API key ni
-autenticación.
+Dato público oficial (Real Decreto 4/2013), sin API key ni autenticación.
