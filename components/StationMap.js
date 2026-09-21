@@ -1,104 +1,125 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
-import { FUEL_LABELS } from "@/lib/miteco";
+import { FUELS } from "@/lib/fuels";
 
-const icon = L.icon({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
-});
+// Límites de España incluyendo Canarias, Ceuta y Melilla: el mapa no deja
+// arrastrarse lejos de aquí, así el usuario no se "pierde" por el océano.
+const SPAIN_LIMITS = [
+  [26.5, -19.5],
+  [45.0, 5.5],
+];
 
-const SPAIN_CENTER = [40.0, -3.7038];
-const SPAIN_ZOOM = 6;
+const FUEL_BY_KEY = Object.fromEntries(FUELS.map((f) => [f.key, f]));
 
-// Fix de un bug clásico de Leaflet + React: si el contenedor todavía no
-// tenía su tamaño final (100vh) en el momento exacto en que el mapa se
-// inicializa, Leaflet se queda con el tamaño viejo "cacheado" y el drag/zoom
-// se comporta raro o parece no responder fuera de esa zona. Forzamos un
-// recálculo apenas monta y en cada resize de ventana.
+// Un punto por gasolinera: una "píldora" blanca con un puntito de color por
+// cada combustible en el que está entre las 10 más baratas de su comunidad.
+function buildIcon(top) {
+  const ordered = FUELS.filter((f) => top.includes(f.key));
+  const dots = ordered
+    .map((f) => `<span class="dot" style="background:${f.color}"></span>`)
+    .join("");
+  const width = 6 + ordered.length * 12;
+  return L.divIcon({
+    className: "station-pin",
+    html: `<div class="pill">${dots}</div>`,
+    iconSize: [width, 16],
+    iconAnchor: [width / 2, 8],
+    popupAnchor: [0, -8],
+  });
+}
+
+// Ajuste de tamaño sin animación (evita que el mapa "salte" al cargar
+// o al cambiar el tamaño del iframe).
 function MapSizeFix() {
   const map = useMap();
-
   useEffect(() => {
-    const fix = () => map.invalidateSize();
-    const t = setTimeout(fix, 200);
+    const fix = () => map.invalidateSize({ pan: false });
+    const t = setTimeout(fix, 100);
     window.addEventListener("resize", fix);
     return () => {
       clearTimeout(t);
       window.removeEventListener("resize", fix);
     };
   }, [map]);
-
   return null;
 }
 
-// Encuadra todos los puntos (incluida Canarias) la primera vez que llegan
-// datos. No se repite al cambiar de combustible para no resetear el zoom
-// que haya hecho el usuario.
-function FitOnFirstLoad({ stations }) {
-  const map = useMap();
-  const done = useRef(false);
-
-  useEffect(() => {
-    if (done.current || stations.length === 0) return;
-    const bounds = L.latLngBounds(stations.map((s) => [s.lat, s.lng]));
-    map.fitBounds(bounds, { padding: [30, 30] });
-    done.current = true;
-  }, [stations, map]);
-
-  return null;
+function Legend() {
+  return (
+    <div className="legend">
+      {FUELS.map((f) => (
+        <div key={f.key} className="legend-row">
+          <span className="dot" style={{ background: f.color }} />
+          {f.label}
+        </div>
+      ))}
+    </div>
+  );
 }
 
-export default function StationMap({ stations, activeFuel }) {
+export default function StationMap({ stations }) {
+  // Encuadre inicial calculado una vez, aplicado directamente al crear el
+  // mapa (sin animación posterior).
+  const initialBounds = useMemo(() => {
+    if (!stations.length) return SPAIN_LIMITS;
+    return L.latLngBounds(stations.map((s) => [s.lat, s.lng]));
+  }, [stations]);
+
+  const icons = useMemo(() => {
+    const cache = {};
+    for (const s of stations) {
+      const k = s.top.join("|");
+      if (!cache[k]) cache[k] = buildIcon(s.top);
+    }
+    return cache;
+  }, [stations]);
+
   return (
     <div className="map-wrapper">
       <MapContainer
-        center={SPAIN_CENTER}
-        zoom={SPAIN_ZOOM}
+        bounds={initialBounds}
+        boundsOptions={{ padding: [20, 20] }}
+        maxBounds={SPAIN_LIMITS}
+        maxBoundsViscosity={1.0}
+        minZoom={5}
         style={{ height: "100%", width: "100%" }}
         dragging={true}
         touchZoom={true}
         doubleClickZoom={true}
-        scrollWheelZoom={true}
-        boxZoom={true}
-        keyboard={true}
+        scrollWheelZoom={false}
+        boxZoom={false}
+        keyboard={false}
         zoomControl={true}
+        fadeAnimation={false}
       >
         <MapSizeFix />
-        <FitOnFirstLoad stations={stations} />
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         {stations.map((s) => (
-          <Marker key={s.id} position={[s.lat, s.lng]} icon={icon}>
+          <Marker key={s.id} position={[s.lat, s.lng]} icon={icons[s.top.join("|")]}>
             <Popup>
               <strong>{s.rotulo}</strong>
               <br />
               {s.direccion}
               <br />
               {s.municipio} · {s.comunidad}
-              <table style={{ marginTop: 6, fontSize: "0.85em" }}>
+              <table className="popup-prices">
                 <tbody>
-                  {Object.entries(FUEL_LABELS).map(([key, label]) => {
-                    const precio = s.precios ? s.precios[key] : key === activeFuel ? s.precio : null;
+                  {FUELS.map((f) => {
+                    const precio = s.precios[f.key];
                     if (precio === null || precio === undefined) return null;
-                    const isActive = key === activeFuel;
+                    const isTop = s.top.includes(f.key);
                     return (
-                      <tr key={key}>
-                        <td style={{ paddingRight: 8 }}>{label}</td>
-                        <td
-                          style={{
-                            fontWeight: isActive ? 700 : 400,
-                            color: isActive ? "#1e7d32" : "#333",
-                          }}
-                        >
+                      <tr key={f.key}>
+                        <td>
+                          <span className="dot" style={{ background: f.color }} /> {f.label}
+                        </td>
+                        <td style={{ fontWeight: isTop ? 700 : 400 }}>
                           {precio.toFixed(3)} €/l
                         </td>
                       </tr>
@@ -110,6 +131,7 @@ export default function StationMap({ stations, activeFuel }) {
           </Marker>
         ))}
       </MapContainer>
+      <Legend />
     </div>
   );
 }
